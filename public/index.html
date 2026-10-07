@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pango → Google Sheets</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">P</span>
+        <div>
+          <strong>Pango Sync</strong>
+          <small>Pango → Google Sheets</small>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="sync">Đồng bộ</button>
+        <button class="nav-item" data-view="history">Lịch sử</button>
+        <button class="nav-item" data-view="settings">Cài đặt</button>
+      </nav>
+
+      <div class="connections" id="connections"></div>
+    </aside>
+
+    <main class="main">
+      <!-- Đồng bộ -->
+      <section class="view" id="view-sync">
+        <header class="topbar">
+          <div>
+            <h1>Đồng bộ</h1>
+            <p class="muted">Mỗi job lấy một nguồn dữ liệu từ Pango và ghi vào một tab Google Sheet.</p>
+          </div>
+          <div class="actions">
+            <button class="btn" id="run-all">Chạy tất cả</button>
+            <button class="btn primary" id="new-job">+ Tạo job</button>
+          </div>
+        </header>
+
+        <div class="stats" id="stats"></div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Nguồn Pango</th>
+                  <th>Ghi vào</th>
+                  <th>Lịch chạy</th>
+                  <th>Lần chạy cuối</th>
+                  <th>Bật</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="jobs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lịch sử -->
+      <section class="view" id="view-history" hidden>
+        <header class="topbar">
+          <div>
+            <h1>Lịch sử</h1>
+            <p class="muted">Các lần chạy gần đây, mới nhất ở trên.</p>
+          </div>
+          <div class="actions">
+            <select id="filter-job"></select>
+            <select id="filter-status">
+              <option value="">Mọi trạng thái</option>
+              <option value="success">Thành công</option>
+              <option value="failed">Lỗi</option>
+              <option value="running">Đang chạy</option>
+            </select>
+          </div>
+        </header>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Thời điểm</th>
+                  <th>Job</th>
+                  <th>Kích hoạt</th>
+                  <th>Trạng thái</th>
+                  <th class="num">Số dòng</th>
+                  <th class="num">Thời gian</th>
+                  <th>Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody id="runs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cài đặt -->
+      <section class="view" id="view-settings" hidden>
+        <header class="topbar">
+          <div>
+            <h1>Cài đặt</h1>
+            <p class="muted">Thông tin kết nối dùng chung cho mọi job.</p>
+          </div>
+        </header>
+
+        <form class="card form-card" id="pango-form">
+          <h2>Pango API</h2>
+          <label>Base URL
+            <input name="baseUrl" type="url" placeholder="https://svc.mydatalakes.com/datahub/api" required>
+          </label>
+          <label>API key (cookie <code>API_KEY</code>)
+            <input name="apiKey" type="password" autocomplete="off">
+          </label>
+          <label>Token (cookie <code>TOKEN</code>, không bắt buộc)
+            <input name="token" type="password" autocomplete="off">
+          </label>
+          <p class="muted" id="token-expiry" hidden></p>
+          <div class="form-actions">
+            <button class="btn" type="button" data-test="pango">Kiểm tra kết nối</button>
+            <button class="btn primary" type="submit">Lưu</button>
+          </div>
+        </form>
+
+        <form class="card form-card" id="google-form">
+          <h2>Google Sheets</h2>
+          <p class="muted">Dùng service account: tải file JSON key lên, rồi chia sẻ Google Sheet cho email bên dưới với quyền <strong>Editor</strong>.</p>
+          <label>File JSON của service account
+            <input name="credentials" type="file" accept="application/json,.json">
+          </label>
+          <div class="field">
+            <span class="field-label">Email service account</span>
+            <div class="copy-row">
+              <code id="google-email">—</code>
+              <button class="btn small" type="button" id="copy-email">Sao chép</button>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn" type="button" data-test="google">Kiểm tra kết nối</button>
+            <button class="btn primary" type="submit">Lưu</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- Tạo / sửa job -->
+  <dialog id="job-dialog">
+    <form id="job-form" novalidate>
+      <header class="dialog-head">
+        <h2 id="job-dialog-title">Tạo job</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Đóng">×</button>
+      </header>
+
+      <div class="dialog-body">
+        <label>Tên job
+          <input name="name" placeholder="VD: Đơn hàng hằng ngày" required>
+        </label>
+
+        <fieldset>
+          <legend>1. Lấy từ Pango</legend>
+          <div class="grid-2">
+            <label>Mã model (hoặc dán cả URL)
+              <input name="modelId" placeholder="M-KNODZ-O-NMB7A-M" required>
+            </label>
+            <label>Lấy bản ghi tạo trong
+              <select name="dateRange">
+                <option value="all">Tất cả</option>
+                <option value="today">Hôm nay</option>
+                <option value="yesterday">Hôm qua</option>
+                <option value="last7days">7 ngày gần nhất</option>
+                <option value="last30days">30 ngày gần nhất</option>
+                <option value="thisMonth">Tháng này</option>
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <span class="field-label">Cột ghi lên sheet</span>
+            <p class="muted" id="columns-hint"></p>
+            <div class="columns" id="columns-list"></div>
+          </div>
+          <div class="actions">
+            <button class="btn small" type="button" id="load-columns-btn">Tải cột từ Pango</button>
+            <button class="btn small" type="button" id="preview-btn">Xem trước dữ liệu</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>2. Ghi vào Google Sheet</legend>
+          <label>Link hoặc ID của Google Sheet
+            <input name="spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/..." required>
+          </label>
+          <div class="grid-2">
+            <label>Tên tab
+              <input name="sheetName" placeholder="Sheet1" required>
+            </label>
+            <label>Ô bắt đầu
+              <input name="startCell" placeholder="A1">
+            </label>
+          </div>
+          <div class="grid-2">
+            <label>Cách ghi
+              <select name="mode">
+                <option value="overwrite">Ghi đè toàn bộ tab</option>
+                <option value="append">Nối thêm xuống cuối</option>
+                <option value="upsert">Cập nhật theo cột khoá</option>
+              </select>
+            </label>
+            <label id="key-column-field" hidden>Cột khoá
+              <input name="keyColumn" placeholder="order_id">
+            </label>
+          </div>
+          <label class="check">
+            <input name="includeHeader" type="checkbox" checked> Ghi dòng tiêu đề cột
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>3. Lịch chạy</legend>
+          <div class="grid-2">
+            <label>Tần suất
+              <select name="scheduleType">
+                <option value="manual">Chỉ chạy tay</option>
+                <option value="every15m">Mỗi 15 phút</option>
+                <option value="hourly">Mỗi giờ</option>
+                <option value="daily">Hằng ngày</option>
+              </select>
+            </label>
+            <label id="schedule-time-field" hidden>Giờ chạy
+              <input name="scheduleTime" type="time" value="07:00">
+            </label>
+          </div>
+        </fieldset>
+
+        <p class="form-error" id="job-error" hidden></p>
+      </div>
+
+      <footer class="dialog-foot">
+        <button class="btn" type="button" data-close>Huỷ</button>
+        <button class="btn primary" type="submit">Lưu job</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- Xem trước dữ liệu -->
+  <dialog id="preview-dialog" class="wide">
+    <header class="dialog-head">
+      <h2>Xem trước dữ liệu Pango</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Đóng">×</button>
+    </header>
+    <div class="dialog-body" id="preview-body"></div>
+  </dialog>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

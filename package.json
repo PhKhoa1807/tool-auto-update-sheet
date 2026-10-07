@@ -1,0 +1,14 @@
+{
+  "name": "tool-update-sheet",
+  "version": "0.1.0",
+  "description": "Tool tự động lấy dữ liệu từ Pango và cập nhật lên Google Sheets",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
