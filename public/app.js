@@ -13,7 +13,7 @@ const TRIGGER_LABELS = { manual: 'Chạy tay', schedule: 'Theo lịch' };
 const DEFAULT_FIELD = /^customField|^modelCreatedAt$/;
 
 // columns: [{ field, header, sample, checked }] — trạng thái bảng chọn cột trong form job.
-const state = { jobs: [], runs: [], status: null, view: 'sync', editingId: null, googleKey: null, columns: [] };
+const state = { jobs: [], runs: [], status: null, view: 'sync', editingId: null, columns: [] };
 
 async function api(method, url, body) {
   const response = await fetch(url, {
@@ -472,7 +472,16 @@ async function loadSettings() {
       expiry.textContent = expiresAt < Date.now() ? `Token đã hết hạn từ ${fullTime(expiresAt)}.` : `Token hết hạn lúc ${fullTime(expiresAt)}.`;
       expiry.classList.toggle('error-text', expiresAt < Date.now());
     }
-    $('#google-email').textContent = settings.google.clientEmail || '—';
+    const { google } = settings;
+    googleForm.clientId.value = google.clientId;
+    googleForm.clientSecret.value = '';
+    googleForm.clientSecret.placeholder = google.hasClientSecret ? '•••••••• (đã lưu — để trống nếu không đổi)' : 'Dán Client secret vào đây';
+    $('#google-dot').classList.toggle('ok', google.connected);
+    $('#google-account').textContent = google.connected ? google.email || 'Đã đăng nhập' : 'Chưa đăng nhập';
+    $('#google-login').textContent = google.connected ? 'Đổi tài khoản' : 'Đăng nhập Google';
+    $('#google-login').hidden = !(google.clientId && google.hasClientSecret);
+    $('#google-logout').hidden = !google.connected;
+    $('#google-test').hidden = !google.connected;
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -489,33 +498,32 @@ pangoForm.addEventListener('submit', async (event) => {
   }
 });
 
-googleForm.credentials.addEventListener('change', async () => {
-  state.googleKey = null;
-  const file = googleForm.credentials.files[0];
-  if (!file) return;
-  try {
-    const key = JSON.parse(await file.text());
-    if (!key.client_email || !key.private_key) throw new Error();
-    state.googleKey = { clientEmail: key.client_email, privateKey: key.private_key };
-    $('#google-email').textContent = key.client_email;
-  } catch {
-    googleForm.credentials.value = '';
-    toast('File này không phải JSON key của service account', 'error');
-  }
-});
-
 googleForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!state.googleKey) return toast('Chọn file JSON key trước khi lưu', 'error');
   try {
-    await api('PUT', '/api/settings', { google: state.googleKey });
-    state.googleKey = null;
-    googleForm.credentials.value = '';
-    toast('Đã lưu service account');
+    await api('PUT', '/api/settings', { google: { clientId: googleForm.clientId.value, clientSecret: googleForm.clientSecret.value } });
+    toast('Đã lưu OAuth client');
     await Promise.all([loadSettings(), refresh()]);
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+$('#google-logout').addEventListener('click', async () => {
+  try {
+    await api('POST', '/api/google/logout');
+    toast('Đã đăng xuất Google');
+    await Promise.all([loadSettings(), refresh()]);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+const googleRedirectUri = `${location.origin}/api/google/callback`;
+$('#google-redirect').textContent = googleRedirectUri;
+$('#copy-redirect').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(googleRedirectUri);
+  toast('Đã sao chép Redirect URI');
 });
 
 $$('[data-test]').forEach((button) =>
@@ -532,14 +540,15 @@ $$('[data-test]').forEach((button) =>
   }),
 );
 
-$('#copy-email').addEventListener('click', async () => {
-  const email = $('#google-email').textContent;
-  if (email === '—') return;
-  await navigator.clipboard.writeText(email);
-  toast('Đã sao chép email');
-});
-
 /* ---------- Khởi động ---------- */
+
+// Google chuyển về đây sau khi đăng nhập: /?view=settings&google=ok hoặc &googleError=...
+const query = new URLSearchParams(location.search);
+if (query.get('view') === 'settings') showView('settings');
+if (query.get('google') === 'ok') toast('Đã đăng nhập Google');
+if (query.get('googleError')) toast(query.get('googleError'), 'error');
+if (query.size) history.replaceState(null, '', location.pathname);
+
 
 refresh().catch((err) => toast(err.message, 'error'));
 setInterval(() => refresh().catch(() => {}), 2500);

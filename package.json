@@ -9,6 +9,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@googleapis/sheets": "^18.1.0",
     "express": "^4.21.2"
   }
 }

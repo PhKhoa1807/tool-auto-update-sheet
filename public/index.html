@@ -114,10 +114,10 @@
           <label>Base URL
             <input name="baseUrl" type="url" placeholder="https://svc.mydatalakes.com/datahub/api" required>
           </label>
-          <label>API key (cookie <code>API_KEY</code>)
+          <label><span>API key (cookie <code>API_KEY</code>)</span>
             <input name="apiKey" type="password" autocomplete="off">
           </label>
-          <label>Token (cookie <code>TOKEN</code>, không bắt buộc)
+          <label><span>Token (cookie <code>TOKEN</code>, không bắt buộc)</span>
             <input name="token" type="password" autocomplete="off">
           </label>
           <p class="muted" id="token-expiry" hidden></p>
@@ -129,20 +129,32 @@
 
         <form class="card form-card" id="google-form">
           <h2>Google Sheets</h2>
-          <p class="muted">Dùng service account: tải file JSON key lên, rồi chia sẻ Google Sheet cho email bên dưới với quyền <strong>Editor</strong>.</p>
-          <label>File JSON của service account
-            <input name="credentials" type="file" accept="application/json,.json">
-          </label>
+          <p class="muted">Tool ghi lên sheet bằng tài khoản Google bạn đăng nhập: sheet nào tài khoản đó có quyền <strong>Editor</strong> là ghi được.</p>
           <div class="field">
-            <span class="field-label">Email service account</span>
+            <span class="field-label">Redirect URI (khai báo trong OAuth client trên Google Cloud Console)</span>
             <div class="copy-row">
-              <code id="google-email">—</code>
-              <button class="btn small" type="button" id="copy-email">Sao chép</button>
+              <code id="google-redirect"></code>
+              <button class="btn small" type="button" id="copy-redirect">Sao chép</button>
             </div>
           </div>
+          <label>OAuth Client ID
+            <input name="clientId" autocomplete="off" placeholder="xxxxxxxx.apps.googleusercontent.com" required>
+          </label>
+          <label>OAuth Client secret
+            <input name="clientSecret" type="password" autocomplete="off">
+          </label>
           <div class="form-actions">
-            <button class="btn" type="button" data-test="google">Kiểm tra kết nối</button>
             <button class="btn primary" type="submit">Lưu</button>
+          </div>
+          <div class="field">
+            <span class="field-label">Tài khoản Google</span>
+            <div class="copy-row">
+              <span class="dot" id="google-dot"></span>
+              <code id="google-account">Chưa đăng nhập</code>
+              <button class="btn small" type="button" data-test="google" id="google-test">Kiểm tra kết nối</button>
+              <button class="btn small danger" type="button" id="google-logout">Đăng xuất</button>
+              <a class="btn small primary" id="google-login" href="/api/google/login">Đăng nhập Google</a>
+            </div>
           </div>
         </form>
       </section>
@@ -212,7 +224,7 @@
               </select>
             </label>
             <label id="key-column-field" hidden>Cột khoá
-              <input name="keyColumn" placeholder="order_id">
+              <input name="keyColumn" placeholder="Tên cột hoặc trường, VD: refId">
             </label>
           </div>
           <label class="check">

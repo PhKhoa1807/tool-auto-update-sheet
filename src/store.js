@@ -16,7 +16,7 @@ function load() {
     runs: [],
     settings: {
       pango: { baseUrl: 'https://svc.mydatalakes.com/datahub/api', apiKey: '', token: '' },
-      google: { clientEmail: '', privateKey: '' },
+      google: { clientId: '', clientSecret: '', refreshToken: '', email: '' },
     },
   };
   let saved;
@@ -126,7 +126,7 @@ export function getPublicSettings() {
       hasToken: Boolean(pango.token),
       tokenExpiresAt: pango.token ? tokenExpiry(pango.token) : null,
     },
-    google: { clientEmail: google.clientEmail, hasPrivateKey: Boolean(google.privateKey) },
+    google: { clientId: google.clientId, hasClientSecret: Boolean(google.clientSecret), connected: Boolean(google.refreshToken), email: google.email },
   };
 }
 
@@ -137,10 +137,19 @@ export function updateSettings({ pango, google }) {
     if (pango.token) db.settings.pango.token = String(pango.token).trim();
     if (pango.clearToken) db.settings.pango.token = '';
   }
-  if (google?.clientEmail && google?.privateKey) {
-    db.settings.google.clientEmail = google.clientEmail;
-    db.settings.google.privateKey = google.privateKey;
+  if (google) {
+    const current = db.settings.google;
+    const clientId = typeof google.clientId === 'string' ? google.clientId.trim() : current.clientId;
+    const clientSecret = google.clientSecret ? String(google.clientSecret).trim() : current.clientSecret;
+    // Refresh token gắn với đúng một OAuth client; đổi client thì phải đăng nhập lại.
+    if (clientId !== current.clientId || clientSecret !== current.clientSecret) Object.assign(current, { refreshToken: '', email: '' });
+    Object.assign(current, { clientId, clientSecret });
   }
   save();
   return getPublicSettings();
+}
+
+export function setGoogleSession({ refreshToken, email }) {
+  Object.assign(db.settings.google, { refreshToken, email });
+  save();
 }

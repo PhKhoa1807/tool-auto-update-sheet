@@ -71,16 +71,24 @@ async function searchPage(config, modelId, page) {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
-    throw new Error(`Không gọi được Pango: ${err.cause?.message ?? err.message}`);
+    throw new Error(`Không gọi được Pango: ${err.cause?.message ?? err.message}`, { cause: err });
   }
+  // `detail` là nội dung Pango trả về, chỉ để ghi log chứ không hiện cho người dùng.
+  const text = await response.text().catch(() => '');
+  const fail = (message) => Object.assign(new Error(message), { status: response.status, detail: text.slice(0, 500) });
   if (response.status === 401 || response.status === 403) {
-    throw new Error(`Pango từ chối xác thực (${response.status}): API key hoặc token sai hoặc đã hết hạn`);
+    throw fail(`Pango từ chối xác thực (${response.status}): API key hoặc token sai hoặc đã hết hạn`);
   }
-  if (!response.ok) throw new Error(`Pango trả về lỗi ${response.status} cho model ${modelId}`);
+  if (!response.ok) throw fail(`Pango trả về lỗi ${response.status} cho model ${modelId}`);
 
-  const data = await response.json().catch(() => null);
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    // Không phải JSON thì báo lỗi định dạng ở dưới.
+  }
   if (!data?.success || !Array.isArray(data.results?.content)) {
-    throw new Error(`Pango trả về dữ liệu không đúng định dạng cho model ${modelId}`);
+    throw fail(`Pango trả về dữ liệu không đúng định dạng cho model ${modelId}`);
   }
   if (data.permissionView && data.permissionView.hasPermission === false) {
     throw new Error(`Tài khoản Pango không có quyền xem model ${modelId}`);
