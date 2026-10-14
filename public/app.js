@@ -4,10 +4,10 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-const MODE_LABELS = { overwrite: 'Ghi đè', append: 'Nối thêm', upsert: 'Cập nhật theo khoá' };
+const MODE_LABELS = { overwrite: 'Ghi đè', append: 'Nối thêm (đã bỏ, cần sửa job)', upsert: 'Cập nhật theo khoá' };
 const RANGE_LABELS = { all: 'Tất cả', today: 'Hôm nay', yesterday: 'Hôm qua', last7days: '7 ngày', last30days: '30 ngày', thisMonth: 'Tháng này' };
 const STATUS_LABELS = { success: 'Thành công', failed: 'Lỗi', running: 'Đang chạy' };
-const TRIGGER_LABELS = { manual: 'Chạy tay', schedule: 'Theo lịch' };
+const TRIGGER_LABELS = { manual: 'Chạy tay', schedule: 'Theo lịch', webhook: 'Webhook' };
 
 // Trường được tick sẵn khi tải cột lần đầu: các custom field và thời điểm tạo bản ghi.
 const DEFAULT_FIELD = /^customField|^modelCreatedAt$/;
@@ -60,9 +60,9 @@ const sheetUrl = (id) => `https://docs.google.com/spreadsheets/d/${encodeURIComp
 /* ---------- Render ---------- */
 
 function renderConnections() {
-  const { pango, google } = state.status;
+  const { webhook, google } = state.status;
   $('#connections').innerHTML = [
-    ['Pango API', pango],
+    ['Pango Webhook', webhook],
     ['Google Sheets', google],
   ]
     .map(([name, conn]) => `<div class="conn"><span class="dot ${conn.ok ? 'ok' : ''}"></span>${name}</div>`)
@@ -70,7 +70,8 @@ function renderConnections() {
 }
 
 function renderStats() {
-  const { pango, google, activeJobs, totalJobs, rowsToday } = state.status;
+  const { webhook, google, activeJobs, totalJobs, rowsToday } = state.status;
+  const received = webhook.receivedAt ? `Nhận dữ liệu lần cuối: ${fullTime(webhook.receivedAt)}` : 'Chưa nhận bản ghi nào';
   const connCard = (label, conn) => `
     <div class="card stat">
       <div class="stat-label">${label}</div>
@@ -78,7 +79,7 @@ function renderStats() {
       <div class="stat-detail" title="${esc(conn.detail)}">${esc(conn.detail) || 'Vào Cài đặt để thiết lập'}</div>
     </div>`;
   $('#stats').innerHTML = `
-    ${connCard('Pango API', pango)}
+    ${connCard('Pango Webhook', { ok: webhook.ok, detail: webhook.ok ? received : '' })}
     ${connCard('Google Sheets', google)}
     <div class="card stat">
       <div class="stat-label">Job đang bật</div>
@@ -169,9 +170,28 @@ function renderRuns() {
     .join('');
 }
 
+// Các model đã nhận dữ liệu: hiện ở Cài đặt và gợi ý mã model khi tạo job.
+function renderModels() {
+  const { models } = state.status.webhook;
+  $('#model-options').innerHTML = models.map((model) => `<option value="${esc(model.modelId)}"></option>`).join('');
+  $('#webhook-models').innerHTML = models.length
+    ? models
+        .map(
+          (model) => `
+        <tr>
+          <td><code>${esc(model.modelId)}</code></td>
+          <td class="num">${model.records.toLocaleString('vi-VN')}</td>
+          <td>${esc(fullTime(model.receivedAt))}</td>
+        </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="3" class="empty">Chưa nhận bản ghi nào. Tạo Webhook Event trên Pango rồi bấm Sync.</td></tr>';
+}
+
 function render() {
   renderConnections();
   renderStats();
+  renderModels();
   renderJobs();
   renderJobFilter();
   renderRuns();
@@ -181,13 +201,31 @@ function render() {
 
 let lastSnapshot = '';
 
+// Có job đang chạy thì làm mới nhanh để thấy kết quả; còn lại làm mới thưa, và nghỉ hẳn khi tab bị ẩn.
+const FAST_REFRESH_MS = 2500;
+const IDLE_REFRESH_MS = 10_000;
+let pollTimer;
+
+// Gọi sau mỗi lần làm mới (kể cả do người dùng bấm) để nhịp kế tiếp khớp với trạng thái mới nhất.
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(
+    () => (document.hidden ? schedulePoll() : refresh().catch(() => {})),
+    state.jobs.some((job) => job.running) ? FAST_REFRESH_MS : IDLE_REFRESH_MS,
+  );
+}
+
 async function refresh() {
-  const [status, jobs, runs] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/jobs'), api('GET', '/api/runs')]);
-  const snapshot = JSON.stringify([status, jobs, runs]);
-  if (snapshot === lastSnapshot) return;
-  lastSnapshot = snapshot;
-  Object.assign(state, { status, jobs, runs });
-  render();
+  try {
+    const [status, jobs, runs] = await Promise.all([api('GET', '/api/status'), api('GET', '/api/jobs'), api('GET', '/api/runs')]);
+    const snapshot = JSON.stringify([status, jobs, runs]);
+    if (snapshot === lastSnapshot) return;
+    lastSnapshot = snapshot;
+    Object.assign(state, { status, jobs, runs });
+    render();
+  } finally {
+    schedulePoll();
+  }
 }
 
 async function runJob(id) {
@@ -301,10 +339,10 @@ const selectedColumns = () =>
 function renderColumns() {
   const chosen = state.columns.filter((column) => column.checked).length;
   $('#columns-hint').textContent = !state.columns.length
-    ? 'Chưa chọn cột: sẽ ghi mọi trường Pango trả về. Bấm “Tải cột từ Pango” để chọn và đặt tên cột.'
+    ? 'Chưa chọn cột: sẽ ghi mọi trường của bản ghi. Bấm “Tải cột” để chọn và đặt tên cột.'
     : chosen
       ? `Đã chọn ${chosen} / ${state.columns.length} trường. Sửa ô bên phải để đặt tên cột trên sheet.`
-      : 'Chưa tick trường nào: sẽ ghi mọi trường Pango trả về.';
+      : 'Chưa tick trường nào: sẽ ghi mọi trường của bản ghi.';
   $('#columns-list').innerHTML = state.columns
     .map(
       (column, index) => `
@@ -428,12 +466,12 @@ jobForm.addEventListener('submit', async (event) => {
 // columns: [{ field, header }] của job; rỗng thì hiển thị mọi trường.
 async function openPreview(source, columns) {
   const body = $('#preview-body');
-  body.innerHTML = '<p class="muted">Đang lấy dữ liệu từ Pango…</p>';
+  body.innerHTML = '<p class="muted">Đang đọc dữ liệu…</p>';
   $('#preview-dialog').showModal();
   try {
     const { fields, rows } = await api('POST', '/api/preview', { source });
     if (!rows.length) {
-      body.innerHTML = '<p class="muted">Pango không trả về bản ghi nào trong khoảng thời gian này.</p>';
+      body.innerHTML = '<p class="muted">Không có bản ghi nào trong khoảng thời gian này.</p>';
       return;
     }
     const cols = columns.length ? columns : fields.map(({ field }) => ({ field, header: field }));
@@ -454,24 +492,14 @@ $$('[data-close]').forEach((button) => button.addEventListener('click', () => bu
 
 /* ---------- Cài đặt ---------- */
 
-const pangoForm = $('#pango-form');
 const googleForm = $('#google-form');
+const webhookForm = $('#webhook-form');
 
 async function loadSettings() {
   try {
     const settings = await api('GET', '/api/settings');
-    pangoForm.baseUrl.value = settings.pango.baseUrl;
-    pangoForm.apiKey.value = '';
-    pangoForm.apiKey.placeholder = settings.pango.hasApiKey ? '•••••••• (đã lưu — để trống nếu không đổi)' : 'Dán API key vào đây';
-    pangoForm.token.value = '';
-    pangoForm.token.placeholder = settings.pango.hasToken ? '•••••••• (đã lưu — để trống nếu không đổi)' : 'Chỉ cần nếu Pango từ chối khi chỉ có API key';
-    const expiry = $('#token-expiry');
-    const expiresAt = settings.pango.tokenExpiresAt;
-    expiry.hidden = !expiresAt;
-    if (expiresAt) {
-      expiry.textContent = expiresAt < Date.now() ? `Token đã hết hạn từ ${fullTime(expiresAt)}.` : `Token hết hạn lúc ${fullTime(expiresAt)}.`;
-      expiry.classList.toggle('error-text', expiresAt < Date.now());
-    }
+    webhookForm.token.value = '';
+    webhookForm.token.placeholder = settings.webhook.hasToken ? '•••••••• (đã lưu — để trống nếu không đổi)' : 'Dán Token Value đã khai trên Pango vào đây';
     const { google } = settings;
     googleForm.clientId.value = google.clientId;
     googleForm.clientSecret.value = '';
@@ -487,17 +515,6 @@ async function loadSettings() {
   }
 }
 
-pangoForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  try {
-    await api('PUT', '/api/settings', { pango: { baseUrl: pangoForm.baseUrl.value, apiKey: pangoForm.apiKey.value, token: pangoForm.token.value } });
-    toast('Đã lưu cấu hình Pango');
-    await Promise.all([loadSettings(), refresh()]);
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-});
-
 googleForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -507,6 +524,24 @@ googleForm.addEventListener('submit', async (event) => {
   } catch (err) {
     toast(err.message, 'error');
   }
+});
+
+webhookForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await api('PUT', '/api/settings', { webhook: { token: webhookForm.token.value } });
+    toast('Đã lưu token webhook');
+    await Promise.all([loadSettings(), refresh()]);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+});
+
+const webhookEndpoint = `${location.origin}/webhook/pango`;
+$('#webhook-endpoint').textContent = webhookEndpoint;
+$('#copy-webhook').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(webhookEndpoint);
+  toast('Đã sao chép Endpoint');
 });
 
 $('#google-logout').addEventListener('click', async () => {
@@ -550,5 +585,8 @@ if (query.get('googleError')) toast(query.get('googleError'), 'error');
 if (query.size) history.replaceState(null, '', location.pathname);
 
 
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refresh().catch(() => {});
+});
+
 refresh().catch((err) => toast(err.message, 'error'));
-setInterval(() => refresh().catch(() => {}), 2500);

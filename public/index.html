@@ -32,7 +32,7 @@
         <header class="topbar">
           <div>
             <h1>Đồng bộ</h1>
-            <p class="muted">Mỗi job lấy một nguồn dữ liệu từ Pango và ghi vào một tab Google Sheet.</p>
+            <p class="muted">Mỗi job ghi các bản ghi Pango đẩy sang của một model vào một tab Google Sheet.</p>
           </div>
           <div class="actions">
             <button class="btn" id="run-all">Chạy tất cả</button>
@@ -109,21 +109,36 @@
           </div>
         </header>
 
-        <form class="card form-card" id="pango-form">
-          <h2>Pango API</h2>
-          <label>Base URL
-            <input name="baseUrl" type="url" placeholder="https://svc.mydatalakes.com/datahub/api" required>
-          </label>
-          <label><span>API key (cookie <code>API_KEY</code>)</span>
-            <input name="apiKey" type="password" autocomplete="off">
-          </label>
-          <label><span>Token (cookie <code>TOKEN</code>, không bắt buộc)</span>
+        <form class="card form-card" id="webhook-form">
+          <h2>Pango Webhook</h2>
+          <p class="muted">Pango tự đẩy bản ghi sang đây mỗi khi model có thay đổi; job của model đó sẽ tự chạy. Khai các giá trị dưới đây trong Webhook connection trên Pango.</p>
+          <div class="field">
+            <span class="field-label">Endpoint (method <code>POST</code>)</span>
+            <div class="copy-row">
+              <code id="webhook-endpoint"></code>
+              <button class="btn small" type="button" id="copy-webhook">Sao chép</button>
+            </div>
+          </div>
+          <label><span>Token Value (Token Field: <code>X-Webhook-Token</code>)</span>
             <input name="token" type="password" autocomplete="off">
           </label>
-          <p class="muted" id="token-expiry" hidden></p>
           <div class="form-actions">
-            <button class="btn" type="button" data-test="pango">Kiểm tra kết nối</button>
             <button class="btn primary" type="submit">Lưu</button>
+          </div>
+          <div class="field">
+            <span class="field-label">Model đã nhận dữ liệu</span>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mã model</th>
+                    <th class="num">Số bản ghi</th>
+                    <th>Nhận lần cuối</th>
+                  </tr>
+                </thead>
+                <tbody id="webhook-models"></tbody>
+              </table>
+            </div>
           </div>
         </form>
 
@@ -175,10 +190,11 @@
         </label>
 
         <fieldset>
-          <legend>1. Lấy từ Pango</legend>
+          <legend>1. Dữ liệu từ Pango</legend>
           <div class="grid-2">
-            <label>Mã model (hoặc dán cả URL)
-              <input name="modelId" placeholder="M-KNODZ-O-NMB7A-M" required>
+            <label>Mã model
+              <input name="modelId" list="model-options" placeholder="M-KNODZ-O-NMB7A-M" required>
+              <datalist id="model-options"></datalist>
             </label>
             <label>Lấy bản ghi tạo trong
               <select name="dateRange">
@@ -197,7 +213,7 @@
             <div class="columns" id="columns-list"></div>
           </div>
           <div class="actions">
-            <button class="btn small" type="button" id="load-columns-btn">Tải cột từ Pango</button>
+            <button class="btn small" type="button" id="load-columns-btn">Tải cột</button>
             <button class="btn small" type="button" id="preview-btn">Xem trước dữ liệu</button>
           </div>
         </fieldset>
@@ -219,7 +235,6 @@
             <label>Cách ghi
               <select name="mode">
                 <option value="overwrite">Ghi đè toàn bộ tab</option>
-                <option value="append">Nối thêm xuống cuối</option>
                 <option value="upsert">Cập nhật theo cột khoá</option>
               </select>
             </label>

@@ -145,7 +145,7 @@ async function ensureGrid(api, spreadsheetId, tab, rows, cols) {
   grid.columnCount = Math.max(grid.columnCount, cols);
 }
 
-// target: { spreadsheetId, sheetName, startCell, mode: overwrite|append|upsert, keyColumn, includeHeader }
+// target: { spreadsheetId, sheetName, startCell, mode: overwrite|upsert, keyColumn, includeHeader }
 // table: { fields: string[], headers: string[], values: any[][] }
 export async function writeRows(target, table, config) {
   const { api } = createClient(config);
@@ -177,24 +177,22 @@ export async function writeTable(api, target, table) {
   };
 
   let values;
-  let startRow = row;
-  if (mode === 'append') {
-    const existing = await readExisting();
-    values = existing.length ? table.values : withHeader(table.values);
-    startRow = row + existing.length;
-  } else if (mode === 'upsert') {
+  if (mode === 'upsert') {
     values = mergeByKey(await readExisting(), table, target);
-  } else {
+  } else if (mode === 'overwrite') {
     await api.spreadsheets.values.clear({ spreadsheetId, range: tabRef });
     values = withHeader(table.values);
+  } else {
+    // Job cũ còn lưu chế độ đã bỏ (append): báo lỗi chứ không lặng lẽ ghi đè cả tab.
+    throw new Error(`Chế độ ghi “${mode}” không còn hỗ trợ. Sửa job, chọn “Cập nhật theo cột khoá” hoặc “Ghi đè toàn bộ tab”.`);
   }
 
   if (values.length) {
-    await ensureGrid(api, spreadsheetId, tab, startRow + values.length - 1, lastCol);
+    await ensureGrid(api, spreadsheetId, tab, row + values.length - 1, lastCol);
     // RAW để giữ nguyên chuỗi như Pango trả về (số điện thoại không mất số 0 đầu).
     await api.spreadsheets.values.update({
       spreadsheetId,
-      range: `${tabRef}!${toLetters(col)}${startRow}`,
+      range: `${tabRef}!${toLetters(col)}${row}`,
       valueInputOption: 'RAW',
       requestBody: { values },
     });
