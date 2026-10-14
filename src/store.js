@@ -1,10 +1,10 @@
-// Lưu job, lịch sử chạy và cài đặt vào data/db.json (thư mục data/ đã được gitignore vì chứa API key).
+// Lưu job, lịch sử chạy và cài đặt vào data/db.json (thư mục data/ đã được gitignore vì chứa token và client secret).
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const DATA_DIR = process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+export const DATA_DIR = process.env.DATA_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_RUNS = 200;
 
@@ -15,8 +15,8 @@ function load() {
     jobs: [],
     runs: [],
     settings: {
-      pango: { baseUrl: 'https://svc.mydatalakes.com/datahub/api', apiKey: '', token: '' },
-      google: { clientEmail: '', privateKey: '' },
+      google: { clientId: '', clientSecret: '', refreshToken: '', email: '' },
+      webhook: { token: '' },
     },
   };
   let saved;
@@ -30,8 +30,8 @@ function load() {
     jobs: saved.jobs ?? [],
     runs: saved.runs ?? [],
     settings: {
-      pango: { ...empty.settings.pango, ...saved.settings?.pango },
       google: { ...empty.settings.google, ...saved.settings?.google },
+      webhook: { ...empty.settings.webhook, ...saved.settings?.webhook },
     },
   };
   // Lần chạy dở dang khi server tắt thì không bao giờ xong được nữa.
@@ -106,41 +106,30 @@ export function getSettings() {
   return db.settings;
 }
 
-// TOKEN của Pango là JWT; đọc hạn dùng để cảnh báo trước khi nó hết hạn.
-function tokenExpiry(token) {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
-    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
 // Không trả secret về trình duyệt, chỉ báo là đã lưu hay chưa.
 export function getPublicSettings() {
-  const { pango, google } = db.settings;
+  const { google, webhook } = db.settings;
   return {
-    pango: {
-      baseUrl: pango.baseUrl,
-      hasApiKey: Boolean(pango.apiKey),
-      hasToken: Boolean(pango.token),
-      tokenExpiresAt: pango.token ? tokenExpiry(pango.token) : null,
-    },
-    google: { clientEmail: google.clientEmail, hasPrivateKey: Boolean(google.privateKey) },
+    google: { clientId: google.clientId, hasClientSecret: Boolean(google.clientSecret), connected: Boolean(google.refreshToken), email: google.email },
+    webhook: { hasToken: Boolean(webhook.token) },
   };
 }
 
-export function updateSettings({ pango, google }) {
-  if (pango) {
-    if (typeof pango.baseUrl === 'string') db.settings.pango.baseUrl = pango.baseUrl.trim();
-    if (pango.apiKey) db.settings.pango.apiKey = String(pango.apiKey).trim();
-    if (pango.token) db.settings.pango.token = String(pango.token).trim();
-    if (pango.clearToken) db.settings.pango.token = '';
+export function updateSettings({ google, webhook }) {
+  if (google) {
+    const current = db.settings.google;
+    const clientId = typeof google.clientId === 'string' ? google.clientId.trim() : current.clientId;
+    const clientSecret = google.clientSecret ? String(google.clientSecret).trim() : current.clientSecret;
+    // Refresh token gắn với đúng một OAuth client; đổi client thì phải đăng nhập lại.
+    if (clientId !== current.clientId || clientSecret !== current.clientSecret) Object.assign(current, { refreshToken: '', email: '' });
+    Object.assign(current, { clientId, clientSecret });
   }
-  if (google?.clientEmail && google?.privateKey) {
-    db.settings.google.clientEmail = google.clientEmail;
-    db.settings.google.privateKey = google.privateKey;
-  }
+  if (webhook?.token) db.settings.webhook.token = String(webhook.token).trim();
   save();
   return getPublicSettings();
+}
+
+export function setGoogleSession({ refreshToken, email }) {
+  Object.assign(db.settings.google, { refreshToken, email });
+  save();
 }

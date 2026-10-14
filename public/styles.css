@@ -232,6 +232,9 @@ label[hidden] { display: none; }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 12px; border-radius: 8px; }
 .copy-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; }
+a.btn { text-decoration: none; display: inline-block; }
+a.btn.primary { color: #fff; }
+.btn[hidden] { display: none; }
 .copy-row code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
 
 /* Dialogs */
